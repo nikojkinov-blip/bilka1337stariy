@@ -1,5 +1,5 @@
 from aiogram import Router, F, types
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, Message, InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -30,30 +30,58 @@ async def take_numbers(call: CallbackQuery):
     if not numbers:
         await call.message.edit_text("❌ Нет доступных номеров.", reply_markup=list_actions_kb(letter))
         return
-    await show_number(call, letter, 0)
+    await show_number(call.message, letter, 0, edit=True)
 
-async def show_number(call, letter, index):
+async def show_number(message_or_call, letter, index, edit=False):
     numbers = PENDING_NUMBERS.get(letter, [])
     total = len(numbers)
     if not numbers:
-        await call.message.edit_text("📋 Номера закончились.", reply_markup=list_actions_kb(letter))
+        text = "📋 Номера закончились."
+        kb = list_actions_kb(letter)
+        if edit:
+            await message_or_call.edit_text(text, reply_markup=kb)
+        else:
+            await message_or_call.answer(text, reply_markup=kb)
         return
+    
     number = numbers[index]
     beeline = is_beeline(number)
-    await call.message.edit_text(
+    
+    # Кнопка копирования
+    copy_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=f"📋 КОПИРОВАТЬ {number}", callback_data=f"copy_{number}")]
+    ])
+    
+    text = (
         f"{DISCLAIMER}\n\n"
         f"📱 <b>Список {letter}</b>\n"
         f"┌─────────────────────┐\n"
         f"│  {number}  │\n"
         f"└─────────────────────┘\n"
-        f"{'✅ Билайн' if beeline else '❌ Не Билайн'}",
-        reply_markup=number_nav_kb(letter, index, total)
+        f"{'✅ Билайн' if beeline else '❌ Не Билайн'}"
     )
+    
+    nav_kb = number_nav_kb(letter, index, total)
+    
+    # Объединяем клавиатуры
+    builder = InlineKeyboardBuilder()
+    builder.attach(InlineKeyboardBuilder.from_markup(copy_kb))
+    builder.attach(InlineKeyboardBuilder.from_markup(nav_kb))
+    
+    if edit:
+        await message_or_call.edit_text(text, reply_markup=builder.as_markup())
+    else:
+        await message_or_call.answer(text, reply_markup=builder.as_markup())
+
+@router.callback_query(F.data.startswith("copy_"))
+async def copy_number(call: CallbackQuery):
+    number = call.data.replace("copy_", "")
+    await call.answer(f"📋 {number}", show_alert=True)
 
 @router.callback_query(F.data.startswith("nav_"))
 async def navigate(call: CallbackQuery):
     _, letter, idx = call.data.split("_")
-    await show_number(call, letter, int(idx))
+    await show_number(call.message, letter, int(idx), edit=True)
     await call.answer()
 
 @router.callback_query(F.data.startswith("notbeeline_"))
@@ -62,7 +90,8 @@ async def not_beeline(call: CallbackQuery):
     remove_number(letter, int(idx))
     numbers = PENDING_NUMBERS.get(letter, [])
     if numbers:
-        await show_number(call, letter, min(int(idx), len(numbers)-1))
+        new_idx = min(int(idx), len(numbers)-1)
+        await show_number(call.message, letter, new_idx, edit=True)
     else:
         await call.message.edit_text("📋 Номера закончились.", reply_markup=list_actions_kb(letter))
     await call.answer("❌ Не Билайн — убран")
@@ -73,7 +102,8 @@ async def limit(call: CallbackQuery):
     remove_number(letter, int(idx))
     numbers = PENDING_NUMBERS.get(letter, [])
     if numbers:
-        await show_number(call, letter, min(int(idx), len(numbers)-1))
+        new_idx = min(int(idx), len(numbers)-1)
+        await show_number(call.message, letter, new_idx, edit=True)
     else:
         await call.message.edit_text("📋 Номера закончились.", reply_markup=list_actions_kb(letter))
     await call.answer("⚠️ Лимит — убран")
