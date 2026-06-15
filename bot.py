@@ -20,6 +20,8 @@ from handlers.numbers import router as numbers_router
 
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher(storage=MemoryStorage())
+
+# Разрешаем работу в группах
 dp.include_router(start_router)
 dp.include_router(numbers_router)
 
