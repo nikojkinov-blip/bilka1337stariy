@@ -11,43 +11,60 @@ router = Router()
 async def start(message: Message):
     await message.answer(MENU, reply_markup=menu_kb())
 
-# ==================== ГРУППОВЫЕ КОМАНДЫ ====================
-@router.message(Command("numbers"))
-async def cmd_numbers(message: Message, command: CommandObject):
+# ==================== ГРУППОВЫЕ КОМАНДЫ (без спама) ====================
+@router.message(Command("num"))
+async def cmd_num(message: Message, command: CommandObject):
+    """Взять 1 номер: /num A"""
     args = command.args
     if not args:
-        await message.reply("❌ Укажите список: /numbers A")
+        await message.reply("❌ /num A", disable_notification=True)
         return
     
     letter = args.strip().upper()
-    if letter not in "ABCDEFGHIJ":
-        await message.reply("❌ Неверный список.")
-        return
-    
-    numbers = get_random_numbers(letter, 5)
-    
+    numbers = get_random_numbers(letter, 1)
     if not numbers:
-        await message.reply(f"❌ В списке {letter} нет номеров.")
+        await message.reply(f"❌ Список {letter} пуст.", disable_notification=True)
         return
     
-    text = f"📱 <b>НОМЕРА (Список {letter}):</b>\n\n"
-    for i, num in enumerate(numbers, 1):
-        beeline = "✅" if is_beeline(num) else "❌"
-        text += f"{i}. {num} {beeline}\n"
+    num = numbers[0]
+    beeline = "✅" if is_beeline(num) else "❌"
     
-    text += f"\n{DISCLAIMER}"
-    await message.reply(text)
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="❌ НЕ БИЛАЙН", callback_data=f"chat_notbeeline_{letter}_0")],
+        [InlineKeyboardButton(text="⚠️ ЛИМИТ", callback_data=f"chat_limit_{letter}_0")],
+        [InlineKeyboardButton(text=f"📋 КОПИРОВАТЬ {num}", callback_data=f"copy_{num}")],
+    ])
+    
+    await message.reply(
+        f"📱 {num} {beeline}",
+        reply_markup=kb,
+        disable_notification=True
+    )
+
+@router.callback_query(F.data.startswith("chat_notbeeline_"))
+async def chat_notbeeline(call: CallbackQuery):
+    _, letter, idx = call.data.split("_")[2:]
+    remove_number(letter, int(idx))
+    await call.message.edit_text(call.message.text + "\n❌ Убран")
+    await call.answer("❌ Убран")
+
+@router.callback_query(F.data.startswith("chat_limit_"))
+async def chat_limit(call: CallbackQuery):
+    _, letter, idx = call.data.split("_")[2:]
+    remove_number(letter, int(idx))
+    await call.message.edit_text(call.message.text + "\n⚠️ Убран")
+    await call.answer("⚠️ Убран")
 
 @router.message(Command("addnums"))
 async def cmd_addnums(message: Message, command: CommandObject):
     args = command.args
     if not args:
-        await message.reply("❌ /addnums A +7 999 111-22-33, +7 999 222-33-44")
+        await message.reply("❌ /addnums A +7999..., +7999...", disable_notification=True)
         return
     
     parts = args.split(maxsplit=1)
     if len(parts) < 2:
-        await message.reply("❌ /addnums A +7 999 111-22-33, +7 999 222-33-44")
+        await message.reply("❌ /addnums A +7999..., +7999...", disable_notification=True)
         return
     
     letter = parts[0].strip().upper()
@@ -56,24 +73,24 @@ async def cmd_addnums(message: Message, command: CommandObject):
     numbers = [n.strip() for n in numbers if n.strip()]
     
     if not numbers:
-        await message.reply("❌ Не указаны номера.")
+        await message.reply("❌ Не указаны номера.", disable_notification=True)
         return
     
     add_numbers(letter, numbers)
-    await message.reply(f"✅ Добавлено {len(numbers)} номеров в список {letter}!")
+    await message.reply(f"✅ +{len(numbers)} в {letter}!", disable_notification=True)
 
 @router.message(Command("lists"))
 async def cmd_lists(message: Message):
-    text = "📁 <b>СПИСКИ НОМЕРОВ:</b>\n\n"
+    text = "📁 "
     for letter in "ABCDEFGHIJ":
         total = len(ALL_NUMBERS.get(letter, []))
         used = len(USED_NUMBERS.get(letter, []))
-        text += f"📁 {letter}: {total} всего, {total-used} доступно\n"
-    await message.reply(text)
+        text += f"{letter}:{total-used}/{total} "
+    await message.reply(text, disable_notification=True)
 
 @router.message(Command("help"))
 async def cmd_help(message: Message):
-    await message.reply("📋 /numbers A | /addnums A номера | /lists | /help")
+    await message.reply("/num A | /addnums A номера | /lists", disable_notification=True)
 
 # ==================== ЛИЧКА ====================
 @router.callback_query(F.data == "menu")
